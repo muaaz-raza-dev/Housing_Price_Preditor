@@ -1,7 +1,9 @@
 import os 
+from sklearn.preprocessing import StandardScaler
 import math
 import tarfile
 from six.moves import urllib 
+from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 import pandas as pd
 import numpy  as np
@@ -59,10 +61,12 @@ def load_test_train_samples(data,data_path=DATA_PATH, test_file_name="test_set.c
     
     return payload
 
-sample_state = load_test_train_samples(data)
+sampled_data = load_test_train_samples(data)
 
-train_set = sample_state["train_set"]
-test_set = sample_state["test_set"]
+train_set = sampled_data["train_set"].drop(["ocean_proximity","median_house_value"],axis=1)
+train_set_labels = sampled_data["train_set"]["median_house_value"].copy()
+test_set = sampled_data["test_set"].drop(["ocean_proximity","median_house_value"],axis=1)
+test_set_labels = sampled_data["test_set"]["median_house_value"]
 
 
 def fill_missing_values_by_median(numeric_data):
@@ -71,16 +75,50 @@ def fill_missing_values_by_median(numeric_data):
     transformed_array = imputer.transform(numeric_data)
     return imputer.statistics_ , transformed_array 
 
-train_set_numeric_fields = train_set.drop("ocean_proximity",axis=1)
 
-result = fill_missing_values_by_median(train_set_numeric_fields)
-train_tr = pd.DataFrame(result[1],columns=train_set_numeric_fields.columns)
+result = fill_missing_values_by_median(train_set)
+train_set = pd.DataFrame(result[1],columns=train_set.columns)
 
 
-train_set_numeric_fields["bedrooms_per_rooms"] = train_set_numeric_fields["total_bedrooms"]/train_set_numeric_fields["total_rooms"]
-train_set_numeric_fields["rooms_per_household"] = train_set_numeric_fields["total_rooms"]/train_set_numeric_fields["households"]
-correlations_matrix = train_set_numeric_fields.corr()
+train_set["bedrooms_per_rooms"] = train_set["total_bedrooms"]/train_set["total_rooms"]
+train_set["rooms_per_household"] = train_set["total_rooms"]/train_set["households"]
 
-print(correlations_matrix["median_house_value"].sort_values(ascending=False))
+
+
+
+def set_standardized_values(numeric_data):
+    scaler = StandardScaler()
+    scaled_valued_data = scaler.fit_transform(numeric_data)
+    return scaled_valued_data
+
+
+standardized_values = set_standardized_values(train_set)
+train_set = pd.DataFrame(standardized_values,columns=train_set.columns)
+
+
+
+
+
+def ProcessData(raw_Data):
+    unlabeled_numeric_data = raw_Data.drop(["median_house_value","ocean_proximity"],  errors="ignore",axis=1)
+    process_pipeline = Pipeline([
+        ("imputer",SimpleImputer(strategy="median")),
+        ("std_scaler",StandardScaler())
+    ]
+    )
+    return pd.DataFrame(process_pipeline.fit_transform(unlabeled_numeric_data),columns=unlabeled_numeric_data.columns)
     
+
+
+
+
+
+
+
+
+
+
+
+
+
 
