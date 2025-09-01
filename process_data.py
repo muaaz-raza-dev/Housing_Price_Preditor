@@ -2,7 +2,7 @@ import os
 from sklearn.preprocessing import StandardScaler
 import math
 import tarfile
-from six.moves import urllib 
+from six.moves import urllib  # type: ignore
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 import pandas as pd
@@ -99,7 +99,7 @@ train_set = pd.DataFrame(standardized_values,columns=train_set.columns)
 
 
 
-def ProcessData(raw_Data):
+def ProcessInputData(raw_Data):
     unlabeled_numeric_data = raw_Data.drop(["median_house_value","ocean_proximity"],  errors="ignore",axis=1)
     process_pipeline = Pipeline([
         ("imputer",SimpleImputer(strategy="median")),
