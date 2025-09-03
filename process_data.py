@@ -2,6 +2,7 @@ import os
 from sklearn.preprocessing import StandardScaler
 import math
 import tarfile
+from sklearn.model_selection import StratifiedShuffleSplit
 from six.moves import urllib  # type: ignore
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
@@ -21,13 +22,14 @@ def fetch_data(data_url = DATA_URL,data_path=DATA_PATH):
     housing_tgz.close()
     os.remove(tgz_path)
 
-fetch_data()
 
 def load_data_to_pandas(data_path=DATA_PATH,file_name="housing.csv"):
     data_file_path = os.path.join(data_path,file_name)
     return pd.read_csv(data_file_path)
 
 data = load_data_to_pandas() 
+
+
 
 def test_train_sample_random(data,test_ratio=0.2):
     np.random.seed(42)
@@ -39,6 +41,25 @@ def test_train_sample_random(data,test_ratio=0.2):
     
     return data.iloc[train_set],data.iloc[test_set]
 
+def sample_stratified_test_train(data,test_size=0.2):
+    data["income_cat"] = pd.cut(data["median_income"],bins=[0,1.5,3,4.5,6,np.inf],labels=[1,2,3,4,5])
+    strat_split = StratifiedShuffleSplit(n_splits=1,test_size=test_size,random_state=69)
+    splitted = strat_split.split(data,data["income_cat"])
+    for train_index, test_index in splitted:
+        strat_train_set = data.loc[train_index]
+        strat_test_set = data.loc[test_index]
+
+    strat_train_set.drop(columns=["income_cat"],inplace=True)
+    strat_test_set.drop(axis=1,columns=["income_cat"],inplace=True)
+
+    return (strat_train_set , strat_test_set)
+
+
+
+
+
+
+
 def save_test_train_samples(test_set,train_set,data_path=DATA_PATH):
     test_set_path  = os.path.join(data_path,"test_set.csv")
     train_set_path  = os.path.join(data_path,"train_set.csv")
@@ -46,38 +67,37 @@ def save_test_train_samples(test_set,train_set,data_path=DATA_PATH):
     train_set.to_csv(train_set_path, index=False)
 
 def load_test_train_samples(data,data_path=DATA_PATH, test_file_name="test_set.csv",train_file_name="train_set.csv"):
-    payload = {"test_set":[],"train_set":[]}
+    payload = []
     test_set_path  = os.path.join(data_path,test_file_name)
     train_set_path  = os.path.join(data_path,train_file_name)
     if (not os.path.isfile(train_set_path)) or (not os.path.isfile(test_set_path)):
-        sampled_data = test_train_sample_random(data)
-        payload["test_set"] = sampled_data[0]
-        payload["train_set"] = sampled_data[1]
-        save_test_train_samples(payload["test_set"],payload["train_set"])
-        return payload
+        train_set,test_set = sample_stratified_test_train(data)
+        payload.append(train_set);
+        payload.append(test_set);
+        save_test_train_samples(payload[0],payload[1]);
+        return tuple(payload)
     
-    payload["test_set"] = pd.read_csv(test_set_path)
-    payload["train_set"] = pd.read_csv(train_set_path)
-    
-    return payload
+    payload.append(pd.read_csv(train_set_path))
+    payload.append(pd.read_csv(test_set_path))
+    return tuple(payload)
 
-sampled_data = load_test_train_samples(data)
+train_set , test_set = load_test_train_samples(data)
 
-train_set = sampled_data["train_set"].drop(["ocean_proximity","median_house_value"],axis=1)
-train_set_labels = sampled_data["train_set"]["median_house_value"].copy()
-test_set = sampled_data["test_set"].drop(["ocean_proximity","median_house_value"],axis=1)
-test_set_labels = sampled_data["test_set"]["median_house_value"]
+train_set_labels = train_set["median_house_value"].copy()
+train_set = train_set.drop(["ocean_proximity","median_house_value"],axis=1)
+test_set_labels = test_set["median_house_value"].copy()
+test_set = test_set.drop(["ocean_proximity","median_house_value"],axis=1)
 
 
 def fill_missing_values_by_median(numeric_data):
     imputer = SimpleImputer(strategy="median")
     imputer.fit(numeric_data)
-    transformed_array = imputer.transform(numeric_data)
-    return imputer.statistics_ , transformed_array 
+    transformed_data = imputer.transform(numeric_data)
+    return  transformed_data, imputer.statistics_
 
 
-result = fill_missing_values_by_median(train_set)
-train_set = pd.DataFrame(result[1],columns=train_set.columns)
+# transformed_data = fill_missing_values_by_median(train_set)
+# train_set = pd.DataFrame(transformed_data[0],columns=train_set.columns)
 
 
 train_set["bedrooms_per_rooms"] = train_set["total_bedrooms"]/train_set["total_rooms"]
@@ -86,20 +106,7 @@ train_set["rooms_per_household"] = train_set["total_rooms"]/train_set["household
 
 
 
-def set_standardized_values(numeric_data):
-    scaler = StandardScaler()
-    scaled_valued_data = scaler.fit_transform(numeric_data)
-    return scaled_valued_data
-
-
-standardized_values = set_standardized_values(train_set)
-train_set = pd.DataFrame(standardized_values,columns=train_set.columns)
-
-
-
-
-
-def ProcessInputData(raw_Data):
+def ProcessDataPipeline(raw_Data):
     unlabeled_numeric_data = raw_Data.drop(["median_house_value","ocean_proximity"],  errors="ignore",axis=1)
     process_pipeline = Pipeline([
         ("imputer",SimpleImputer(strategy="median")),
@@ -110,7 +117,7 @@ def ProcessInputData(raw_Data):
     
 
 
-
+train_set = ProcessDataPipeline(train_set)
 
 
 
